@@ -1,0 +1,2525 @@
+{
+  "name": "Woocommerce Order Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "woo-order-created",
+        "options": {}
+      },
+      "id": "0dc2c256-4283-46df-9f92-ebef87c32e5b",
+      "name": "WooCommerce Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        128
+      ],
+      "webhookId": "woo-order-created",
+      "notes": "Register in WooCommerce > Settings > Advanced > Webhooks. Topic: order.created. URL: https://YOUR_N8N_DOMAIN/webhook/woo-order-created"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 1: Validate incoming WooCommerce order payload ──\nconst body = $input.first().json.body || $input.first().json;\n\n// Required fields check\nconst requiredFields = ['id', 'status', 'total', 'billing', 'line_items'];\nconst missingFields = requiredFields.filter(f => !body[f]);\nif (missingFields.length > 0) {\n  throw new Error(`WooCommerce payload missing required fields: ${missingFields.join(', ')}`);\n}\n\n// Only process 'processing' orders (payment confirmed)\n// 'pending' = awaiting payment, ignore until it becomes 'processing'\nconst status = (body.status || '').toLowerCase();\nif (status !== 'processing') {\n  return [{ json: { skip: true, reason: `Status is '${status}', not 'processing'. Ignoring.`, order_id: body.id } }];\n}\n\nconst lineItems = body.line_items || [];\nif (lineItems.length === 0) {\n  throw new Error(`Order #${body.id} has no line items — possible corrupted webhook payload`);\n}\n\n// Parse order cleanly\nconst orderTotal = parseFloat(body.total) || 0;\nconst billing = body.billing || {};\nconst shipping = body.shipping || {};\nconst customerEmail = billing.email || '';\nconst customerName = `${billing.first_name || ''} ${billing.last_name || ''}`.trim();\n\nreturn [{\n  json: {\n    skip: false,\n    order_id:        body.id,\n    order_number:    body.number || body.id,\n    status:          status,\n    order_total:     orderTotal,\n    currency:        body.currency || 'USD',\n    customer_email:  customerEmail,\n    customer_name:   customerName,\n    customer_id:     body.customer_id || 0,\n    billing_country: billing.country || '',\n    shipping_country: shipping.country || billing.country || '',\n    payment_method:  body.payment_method || '',\n    payment_method_title: body.payment_method_title || '',\n    line_items:      lineItems.map(item => ({\n      product_id:   item.product_id,\n      product_name: item.name,\n      sku:          item.sku || String(item.product_id),\n      quantity:     item.quantity,\n      subtotal:     parseFloat(item.subtotal) || 0\n    })),\n    item_count:      lineItems.reduce((sum, i) => sum + i.quantity, 0),\n    date_created:    body.date_created || new Date().toISOString(),\n    received_at:     new Date().toISOString()\n  }\n}];"
+      },
+      "id": "a912d92f-02ed-42b7-b63c-48883be44941",
+      "name": "Validate & Parse Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8dbfbd94-a84e-48ed-a839-1cbfa65b8ce7",
+      "name": "Is Processing Order?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        128
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "55baa75a-3223-4486-aada-fb2b693b37b8",
+      "name": "Skip — Not Processing",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders Master",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "b16bb909-3604-44af-985f-1c787359322a",
+      "name": "Read Recent Orders",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -480,
+        32
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Inventory Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "3160d73b-0d0e-412f-88af-bfe220162081",
+      "name": "Read Inventory Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -480,
+        176
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 2: Fraud signal detection + stock check ──\n// ── Configuration ──\nconst HIGH_VALUE_THRESHOLD   = 500;   // orders above this are flagged\nconst VELOCITY_WINDOW_HOURS  = 24;    // look-back window for repeat orders\nconst VELOCITY_MAX_ORDERS    = 3;     // max orders per customer in window\nconst FREE_EMAIL_DOMAINS     = ['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com'];\n\nconst order       = $('Validate & Parse Order').item.json;\nconst recentRows  = $('Read Recent Orders').all();\nconst inventoryRows = $('Read Inventory Sheet').all();\n\nconst flags = [];\nconst warnings = [];\n\n// ─ Flag 1: High value order ─\nif (order.order_total >= HIGH_VALUE_THRESHOLD) {\n  flags.push(`High value order: ${order.currency} ${order.order_total}`);\n}\n\n// ─ Flag 2: Billing/shipping country mismatch ─\nif (order.billing_country && order.shipping_country &&\n    order.billing_country !== order.shipping_country) {\n  flags.push(`Billing country (${order.billing_country}) ≠ shipping country (${order.shipping_country})`);\n}\n\n// ─ Flag 3: Customer velocity — too many orders in 24h ─\nconst cutoff = Date.now() - VELOCITY_WINDOW_HOURS * 3600 * 1000;\nconst recentByCustomer = recentRows.filter(r => {\n  const email = r.json['Customer Email'] || '';\n  const created = new Date(r.json['Date Created'] || 0).getTime();\n  return email.toLowerCase() === order.customer_email.toLowerCase() && created > cutoff;\n});\nif (recentByCustomer.length >= VELOCITY_MAX_ORDERS) {\n  flags.push(`Velocity: customer placed ${recentByCustomer.length} orders in last ${VELOCITY_WINDOW_HOURS}h`);\n}\n\n// ─ Flag 4: Free email domain on high-value order ─\nconst emailDomain = order.customer_email.split('@')[1] || '';\nif (order.order_total >= HIGH_VALUE_THRESHOLD && FREE_EMAIL_DOMAINS.includes(emailDomain.toLowerCase())) {\n  warnings.push(`Free email domain (${emailDomain}) on high-value order`);\n}\n\n// ─ Flag 5: Guest order (no customer account) on high value ─\nif (order.customer_id === 0 && order.order_total >= HIGH_VALUE_THRESHOLD) {\n  warnings.push('Guest checkout on high-value order — no account on file');\n}\n\n// ─ Stock check ─\nconst stockIssues = [];\norder.line_items.forEach(item => {\n  const match = inventoryRows.find(r =>\n    (r.json.SKU || '').toString().trim().toLowerCase() === item.sku.toLowerCase()\n  );\n  if (!match) {\n    stockIssues.push(`SKU \"${item.sku}\" (${item.product_name}) not found in inventory sheet`);\n  } else {\n    const available = parseInt(match.json['Current Stock']) || 0;\n    if (available < item.quantity) {\n      stockIssues.push(`SKU \"${item.sku}\": ordered ${item.quantity}, only ${available} in stock`);\n    }\n  }\n});\n\nif (stockIssues.length > 0) {\n  flags.push(`Stock issues: ${stockIssues.join(' | ')}`);\n}\n\nconst isFlagged   = flags.length > 0;\nconst hasWarnings = warnings.length > 0;\n\n// Build Slack message for #orders\nconst itemList = order.line_items.map(i => `• ${i.product_name} × ${i.quantity}`).join('\\n');\nconst slackOrderMsg = [\n  `*New Order #${order.order_number}* — ${order.currency} ${order.order_total}`,\n  `*Customer:* ${order.customer_name} (${order.customer_email})`,\n  `*Items:*\\n${itemList}`,\n  `*Payment:* ${order.payment_method_title}`,\n  isFlagged   ? `\\n:warning: *FLAGS:* ${flags.join(' | ')}` : '',\n  hasWarnings ? `\\n:information_source: *Warnings:* ${warnings.join(' | ')}` : ''\n].filter(Boolean).join('\\n');\n\n// Build Slack review message (only if flagged)\nconst N8N_BASE_URL = 'https://n8n.sahcreatives.com';\nconst encodedOrder = encodeURIComponent(JSON.stringify({ order_id: order.order_id, order_number: order.order_number, flags }));\nconst approveUrl = `${N8N_BASE_URL}/webhook/order-review?action=approve&data=${encodedOrder}`;\nconst holdUrl    = `${N8N_BASE_URL}/webhook/order-review?action=hold&data=${encodedOrder}`;\nconst cancelUrl  = `${N8N_BASE_URL}/webhook/order-review?action=cancel&data=${encodedOrder}`;\n\nconst slackReviewMsg = isFlagged ? [\n  `:rotating_light: *Order #${order.order_number} flagged for review*`,\n  `*Total:* ${order.currency} ${order.order_total}`,\n  `*Customer:* ${order.customer_name} (${order.customer_email})`,\n  `*Flags:*\\n${flags.map(f => `  • ${f}`).join('\\n')}`,\n  `\\n<${approveUrl}|Approve> | <${holdUrl}|Put on Hold> | <${cancelUrl}|Cancel>`\n].join('\\n') : '';\n\nreturn [{\n  json: {\n    ...order,\n    flags,\n    warnings,\n    stock_issues: stockIssues,\n    is_flagged: isFlagged,\n    has_warnings: hasWarnings,\n    slack_order_msg: slackOrderMsg,\n    slack_review_msg: slackReviewMsg\n  }\n}];"
+      },
+      "id": "8ff967ae-25b9-42ed-92f0-9c5d131def1a",
+      "name": "Fraud Check & Stock Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders Master",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order ID": "={{ $json.order_id }}",
+            "Order Number": "={{ $json.order_number }}",
+            "Date Created": "={{ $json.date_created }}",
+            "Customer Name": "={{ $json.customer_name }}",
+            "Customer Email": "={{ $json.customer_email }}",
+            "Items": "={{ $json.line_items.map(i => i.product_name + ' x' + i.quantity).join(', ') }}",
+            "Item Count": "={{ $json.item_count }}",
+            "Order Total": "={{ $json.order_total }}",
+            "Currency": "={{ $json.currency }}",
+            "Payment Method": "={{ $json.payment_method_title }}",
+            "Status": "processing",
+            "Flagged": "={{ $json.is_flagged ? 'YES' : 'NO' }}",
+            "Flags": "={{ $json.flags.join(' | ') }}",
+            "Logged At": "={{ $json.received_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order Number",
+              "displayName": "Order Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Created",
+              "displayName": "Date Created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Name",
+              "displayName": "Customer Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Email",
+              "displayName": "Customer Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Item Count",
+              "displayName": "Item Count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order Total",
+              "displayName": "Order Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Flagged",
+              "displayName": "Flagged",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Flags",
+              "displayName": "Flags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Logged At",
+              "displayName": "Logged At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "459084cc-097f-4814-900b-3b37cfddee7a",
+      "name": "Log Order to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "flag-check",
+              "leftValue": "={{ $json.is_flagged }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d2c21a17-c3d2-4872-8dbb-fcd8239eec7b",
+      "name": "Is Flagged?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "ksanu848@gmail.com",
+        "subject": "=New Order #{{ $json.order_number }} — {{ $json.currency }} {{ $json.order_total }} ({{ $json.customer_name }})",
+        "message": "=<h2>New Order Received</h2><table border='1' cellpadding='8' style='border-collapse:collapse'><tr><td><b>Order #</b></td><td>{{ $json.order_number }}</td></tr><tr><td><b>Customer</b></td><td>{{ $json.customer_name }} ({{ $json.customer_email }})</td></tr><tr><td><b>Total</b></td><td>{{ $json.currency }} {{ $json.order_total }}</td></tr><tr><td><b>Payment</b></td><td>{{ $json.payment_method_title }}</td></tr><tr><td><b>Items</b></td><td>{{ $json.line_items.map(i => i.product_name + ' x' + i.quantity).join(', ') }}</td></tr>{{ $json.is_flagged ? '<tr style=\"background:#fff3cd\"><td><b>FLAGS</b></td><td>' + $json.flags.join(' | ') + '</td></tr>' : '' }}</table>",
+        "options": {}
+      },
+      "id": "799ed0b6-2679-4bc8-b7f8-23f1e1a729af",
+      "name": "Send Order Confirmation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        240,
+        384
+      ],
+      "webhookId": "ea078e42-2167-43f2-8f3a-cbc511851d49",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "order-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "71584ff3-9ae3-4915-b23b-0ccf9daed153",
+      "name": "Order Review Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        528
+      ],
+      "webhookId": "order-review-webhook",
+      "notes": "Receives Approve / Hold / Cancel clicks from the #order-review Slack message"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst action = (query.action || '').toLowerCase();\n\nif (!['approve','hold','cancel'].includes(action)) {\n  throw new Error(`Invalid review action: \"${action}\". Expected: approve, hold, cancel`);\n}\nif (!query.data) {\n  throw new Error('Missing order data in review URL');\n}\n\nlet orderData = {};\ntry {\n  orderData = JSON.parse(decodeURIComponent(query.data));\n} catch(e) {\n  throw new Error(`Could not parse order data from URL: ${e.message}`);\n}\n\nif (!orderData.order_id) {\n  throw new Error('Order data missing order_id');\n}\n\nreturn [{\n  json: {\n    action,\n    order_id:     orderData.order_id,\n    order_number: orderData.order_number,\n    flags:        orderData.flags || [],\n    reviewed_at:  new Date().toISOString()\n  }\n}];"
+      },
+      "id": "2e32c570-0fb6-43e0-b738-1f8c7b9f14c9",
+      "name": "Parse Review Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "62f6fbe2-71f6-480f-b291-7d77e8bf9033",
+      "name": "Action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=Order status successfully changed to: {{ $json.status }}. Now you can close this tab.",
+        "options": {}
+      },
+      "id": "e95aacdf-1c72-4e1b-8095-b6e9f87579ba",
+      "name": "Respond to Review Click",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## New Order Intake",
+        "height": 832,
+        "width": 2240
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        -32
+      ],
+      "id": "8dcf2e13-7cfe-4731-b3eb-85f089e1384f",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "=New Order Received\n\nOrder #{{ $json.order_number }}\nCustomer: {{ $json.customer_name }} ({{ $json.customer_email }})\nTotal: {{ $json.currency }} {{ $json.order_total }}\nPayment Mode: {{ $json.payment_method_title }}\nItems: {{ $json.line_items.map(i => i.product_name + ' x' + i.quantity).join(', ') }}\n\n{{ $json.is_flagged ? $json.flags.join(' | ') : '' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        160
+      ],
+      "id": "c311613f-ef13-4914-8667-18b7d87ca0c0",
+      "name": "Slack #orders — New Order",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "={{ $json.slack_review_msg }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "unfurl_links": false,
+          "unfurl_media": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        240,
+        208
+      ],
+      "id": "97f63d52-02d7-423f-b3b1-33957b81d4ca",
+      "name": "Slack #order-review — Flag Alert",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "n8n-order-updated",
+        "options": {}
+      },
+      "id": "ba7d10c9-be5a-4058-9cdf-4179ec2e0de4",
+      "name": "WooCommerce Order Updated Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -944,
+        1136
+      ],
+      "webhookId": "woo-order-updated",
+      "notes": "Register in WooCommerce > Settings > Advanced > Webhooks. Topic: order.updated. URL: https://YOUR_N8N_DOMAIN/webhook/woo-order-updated"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 1: Parse the updated order and detect meaningful status changes ──\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.id) {\n  throw new Error('Order updated webhook missing order ID');\n}\n\nconst newStatus = (body.status || '').toLowerCase();\nconst billing   = body.billing || {};\nconst shipping  = body.shipping || {};\n\n// Status labels map — what we say to the customer vs internal names\nconst STATUS_LABELS = {\n  'pending':    { label: 'Pending Payment',  customer_facing: false },\n  'processing': { label: 'Processing',       customer_facing: true  },\n  'on-hold':    { label: 'On Hold',          customer_facing: true  },\n  'completed':  { label: 'Completed',        customer_facing: true  },\n  'cancelled':  { label: 'Cancelled',        customer_facing: true  },\n  'refunded':   { label: 'Refunded',         customer_facing: true  },\n  'failed':     { label: 'Payment Failed',   customer_facing: true  }\n};\n\nconst statusInfo = STATUS_LABELS[newStatus] || { label: newStatus, customer_facing: false };\n\n// Customer email templates per status\nconst EMAIL_TEMPLATES = {\n  'processing': {\n    subject: `Your order #${body.number || body.id} is confirmed`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>We have received your order and payment is confirmed. We are now preparing your items.</p><p><b>Order #${body.number || body.id}</b> — ${body.currency} ${body.total}</p><p>You will receive another email when your order ships.</p>`\n  },\n  'completed': {\n    subject: `Your order #${body.number || body.id} is complete`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>Great news — your order has been fulfilled and is on its way!</p><p><b>Order #${body.number || body.id}</b></p><p>Thank you for your purchase.</p>`\n  },\n  'on-hold': {\n    subject: `Your order #${body.number || body.id} is on hold`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>Your order is temporarily on hold while we verify some details. Our team will be in touch shortly.</p><p>If you have questions, please reply to this email.</p>`\n  },\n  'cancelled': {\n    subject: `Your order #${body.number || body.id} has been cancelled`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>Your order has been cancelled. If you did not request this or have questions, please contact us.</p><p>If payment was taken, a refund will be processed within 5–7 business days.</p>`\n  },\n  'refunded': {\n    subject: `Refund processed for order #${body.number || body.id}`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>Your refund has been processed. Please allow 5–7 business days for it to appear in your account.</p>`\n  },\n  'failed': {\n    subject: `Payment failed for order #${body.number || body.id}`,\n    body: `<p>Hi ${billing.first_name || 'there'},</p><p>We were unable to process payment for your order. Please update your payment details or try again.</p><p>Your cart has been saved and you can retry checkout using the link below.</p>`\n  }\n};\n\nconst emailTemplate = EMAIL_TEMPLATES[newStatus] || null;\n\n// Slack team notification\nconst lineItems = (body.line_items || []).map(i => `• ${i.name} × ${i.quantity}`).join('\\n');\nconst slackMsg = [\n  `*Order #${body.number || body.id}* status → *${statusInfo.label}*`,\n  `*Customer:* ${billing.first_name || ''} ${billing.last_name || ''} (${billing.email || ''})`,\n  `*Total:* ${body.currency} ${body.total}`,\n  lineItems\n].join('\\n');\n\nreturn [{\n  json: {\n    order_id:         body.id,\n    order_number:     body.number || body.id,\n    new_status:       newStatus,\n    status_label:     statusInfo.label,\n    is_customer_facing: statusInfo.customer_facing,\n    customer_email:   billing.email || '',\n    customer_name:    `${billing.first_name || ''} ${billing.last_name || ''}`.trim(),\n    order_total:      body.total || 0,\n    currency:         body.currency || 'USD',\n    email_subject:    emailTemplate ? emailTemplate.subject : '',\n    email_body:       emailTemplate ? emailTemplate.body    : '',\n    should_email:     !!(emailTemplate && billing.email),\n    slack_msg:        slackMsg,\n    updated_at:       new Date().toISOString()\n  }\n}];"
+      },
+      "id": "237d5436-b8cd-4079-845e-7bed91a75b75",
+      "name": "Parse Status Change",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders Master",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "={{ $json.new_status }}",
+            "Last Updated": "={{ $json.updated_at }}",
+            "row_number": 0,
+            "Order ID": "={{ $json.order_id }}"
+          },
+          "matchingColumns": [
+            "Order ID"
+          ],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Order Number",
+              "displayName": "Order Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Date Created",
+              "displayName": "Date Created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Customer Name",
+              "displayName": "Customer Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Customer Email",
+              "displayName": "Customer Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Item Count",
+              "displayName": "Item Count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Order Total",
+              "displayName": "Order Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Flagged",
+              "displayName": "Flagged",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Flags",
+              "displayName": "Flags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Logged At",
+              "displayName": "Logged At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "19096b59-4948-4238-9dc2-1eed1a630528",
+      "name": "Update Orders Master",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -496,
+        1008
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 397852313,
+          "mode": "list",
+          "cachedResultName": "Order Status Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=397852313"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order ID": "={{ $json.order_id }}",
+            "Order Number": "={{ $json.order_number }}",
+            "New Status": "={{ $json.new_status }}",
+            "Changed At": "={{ $json.updated_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order Number",
+              "displayName": "Order Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "New Status",
+              "displayName": "New Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Changed At",
+              "displayName": "Changed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "1d10b29b-6976-4ed9-99d4-932232ff2e17",
+      "name": "Append Status Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -496,
+        1168
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "should-email",
+              "leftValue": "={{ $json.should_email }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "65cefeee-9eb7-4678-8971-5892cd52ec83",
+      "name": "Should Email Customer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.customer_email }}",
+        "subject": "={{ $json.email_subject }}",
+        "message": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "id": "2e6db5a6-853b-41e1-9fae-eac34ec4eee8",
+      "name": "Email Customer — Status Update",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        1056
+      ],
+      "webhookId": "98b8e368-a9f5-4bff-8e31-ca39bf84796f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "68976ed6-ebd6-46a8-a40d-a278490c0593",
+      "name": "No Customer Email Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Fulfillment tracking",
+        "height": 736,
+        "width": 2240
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        848
+      ],
+      "id": "25bc9bf3-e409-49e7-841e-c54b17365f9a",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "={{ $json.slack_msg }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        -496,
+        1360
+      ],
+      "id": "db38152c-50ac-4744-b8c1-c5dbb2ad2ea2",
+      "name": "Slack #orders — Status Update1",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "woo-order-problem",
+        "options": {}
+      },
+      "id": "4ca531c1-67b0-4e5a-bc27-7718aa9c8627",
+      "name": "Problem Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1264,
+        1904
+      ],
+      "webhookId": "woo-order-problem",
+      "notes": "Register TWO WooCommerce webhooks pointing here:\n1. Topic: order.updated (status = failed)\n2. You can also POST manually from Flow 1 review if cancelled\nURL: https://YOUR_N8N_DOMAIN/webhook/woo-order-problem"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 1: Classify the problem type and severity ──\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.id) {\n  throw new Error('Problem order webhook missing order ID');\n}\n\nconst status = (body.status || '').toLowerCase();\nconst billing = body.billing || {};\nconst orderTotal = parseFloat(body.total) || 0;\n\n// Problem classification\nconst PROBLEM_TYPES = {\n  'failed':    { type: 'payment_failed',   severity: 'high',   action_needed: 'Contact customer or retry payment' },\n  'cancelled': { type: 'cancelled',        severity: 'medium', action_needed: 'Restock inventory if items were reserved' },\n  'refunded':  { type: 'refunded',         severity: 'medium', action_needed: 'Verify refund processed in payment gateway' },\n  'on-hold':   { type: 'on_hold',          severity: 'low',    action_needed: 'Review and approve or cancel' }\n};\n\nconst problemInfo = PROBLEM_TYPES[status];\nif (!problemInfo) {\n  return [{ json: { skip: true, reason: `Status '${status}' is not a problem status`, order_id: body.id } }];\n}\n\nconst N8N_BASE_URL = 'https://n8n.sahcreatives.com';\nconst lineItems = (body.line_items || []).map(i => ({\n  product_name: i.name,\n  sku: i.sku || String(i.product_id),\n  quantity: i.quantity\n}));\n\n// Build encoded payload for action URL\nconst encodedPayload = encodeURIComponent(JSON.stringify({\n  order_id: body.id,\n  order_number: body.number || body.id,\n  status,\n  customer_email: billing.email || '',\n  customer_name: `${billing.first_name || ''} ${billing.last_name || ''}`.trim(),\n  order_total: orderTotal,\n  currency: body.currency || 'USD',\n  line_items: lineItems\n}));\n\nconst restockUrl = `${N8N_BASE_URL}/webhook/order-problem-action?action=restock&data=${encodedPayload}`;\nconst refundUrl  = `${N8N_BASE_URL}/webhook/order-problem-action?action=refund&data=${encodedPayload}`;\nconst contactUrl = `${N8N_BASE_URL}/webhook/order-problem-action?action=contact&data=${encodedPayload}`;\nconst noActionUrl = `${N8N_BASE_URL}/webhook/order-problem-action?action=noaction&data=${encodedPayload}`;\n\n// Build Slack message based on problem type\nconst severityEmoji = { high: ':red_circle:', medium: ':large_yellow_circle:', low: ':white_circle:' };\nconst emoji = severityEmoji[problemInfo.severity] || ':grey_question:';\n\nconst actionButtons = [];\nif (status === 'cancelled' || status === 'refunded') actionButtons.push(`<${restockUrl}|Restock inventory>`);\nif (status === 'refunded') actionButtons.push(`<${refundUrl}|Confirm refund>`);\nif (status === 'failed')   actionButtons.push(`<${contactUrl}|Contact customer>`);\nactionButtons.push(`<${noActionUrl}|No action needed>`);\n\nconst slackMsg = [\n  `${emoji} *Problem Order #${body.number || body.id}* — ${problemInfo.type.replace(/_/g,' ').toUpperCase()}`,\n  `*Customer:* ${billing.first_name || ''} ${billing.last_name || ''} (${billing.email || ''})`,\n  `*Total:* ${body.currency} ${orderTotal}`,\n  `*Items:* ${lineItems.map(i => i.product_name + ' ×' + i.quantity).join(', ')}`,\n  `*Severity:* ${problemInfo.severity.toUpperCase()}`,\n  `*Suggested action:* ${problemInfo.action_needed}`,\n  `\\n${actionButtons.join(' | ')}`\n].join('\\n');\n\nreturn [{\n  json: {\n    skip:           false,\n    order_id:       body.id,\n    order_number:   body.number || body.id,\n    status,\n    problem_type:   problemInfo.type,\n    severity:       problemInfo.severity,\n    action_needed:  problemInfo.action_needed,\n    customer_email: billing.email || '',\n    customer_name:  `${billing.first_name || ''} ${billing.last_name || ''}`.trim(),\n    order_total:    orderTotal,\n    currency:       body.currency || 'USD',\n    line_items:     lineItems,\n    slack_msg:      slackMsg,\n    logged_at:      new Date().toISOString()\n  }\n}];"
+      },
+      "id": "b0598b5f-bbf8-45d1-a277-862cdb7f331e",
+      "name": "Classify Problem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        1904
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4ee3710b-4160-482d-9459-69cb29950077",
+      "name": "Is a Problem Status?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        1904
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 600887742,
+          "mode": "list",
+          "cachedResultName": "Problem Orders",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=600887742"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order ID": "={{ $json.order_id }}",
+            "Order Number": "={{ $json.order_number }}",
+            "Problem Type": "={{ $json.problem_type }}",
+            "Severity": "={{ $json.severity }}",
+            "Customer Email": "={{ $json.customer_email }}",
+            "Order Total": "={{ $json.order_total }}",
+            "Items": "={{ $json.line_items.map(i => i.product_name + ' x' + i.quantity).join(', ') }}",
+            "Status": "open",
+            "Logged At": "={{ $json.logged_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order Number",
+              "displayName": "Order Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Problem Type",
+              "displayName": "Problem Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Severity",
+              "displayName": "Severity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Email",
+              "displayName": "Customer Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order Total",
+              "displayName": "Order Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Logged At",
+              "displayName": "Logged At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "aa6d253f-2a54-4fcb-a298-49d5234c5b8b",
+      "name": "Log Problem Order",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -544,
+        1680
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "high-sev",
+              "leftValue": "={{ $json.severity }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a9bc5f8c-dd79-413b-9f29-30e2bf0096b0",
+      "name": "Is High Severity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        2080
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "ksanu848@gmail.com",
+        "subject": "=URGENT: {{ $json.problem_type.replace(/_/g,' ').toUpperCase() }} — Order #{{ $json.order_number }}",
+        "message": "=<h2 style='color:#c0392b'>Urgent: {{ $json.problem_type }} on Order #{{ $json.order_number }}</h2><table border='1' cellpadding='8' style='border-collapse:collapse'><tr><td><b>Customer</b></td><td>{{ $json.customer_name }} ({{ $json.customer_email }})</td></tr><tr><td><b>Total</b></td><td>{{ $json.currency }} {{ $json.order_total }}</td></tr><tr><td><b>Severity</b></td><td>{{ $json.severity }}</td></tr><tr><td><b>Action Needed</b></td><td>{{ $json.action_needed }}</td></tr></table>",
+        "options": {}
+      },
+      "id": "a7c29c2e-b7f0-4753-acb2-eef10b5121a1",
+      "name": "Urgent Email — High Severity",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        2000
+      ],
+      "webhookId": "0a075ada-f725-42a8-b036-388dd78a912d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "order-problem-action",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "17cc1301-1e3d-4a82-878b-eb18d808480f",
+      "name": "Problem Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1264,
+        2320
+      ],
+      "webhookId": "order-problem-action-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst action = (query.action || '').toLowerCase();\n\nconst validActions = ['restock','refund','contact','noaction'];\nif (!validActions.includes(action)) {\n  throw new Error(`Invalid problem action: \"${action}\". Expected: ${validActions.join(', ')}`);\n}\nif (!query.data) {\n  throw new Error('Missing order data in problem action URL');\n}\n\nlet orderData = {};\ntry {\n  orderData = JSON.parse(decodeURIComponent(query.data));\n} catch(e) {\n  throw new Error(`Could not parse order data: ${e.message}`);\n}\n\nif (!orderData.order_id) {\n  throw new Error('Order data missing order_id');\n}\n\nreturn [{\n  json: {\n    action,\n    order_id:       orderData.order_id,\n    order_number:   orderData.order_number,\n    status:         orderData.status,\n    customer_email: orderData.customer_email,\n    customer_name:  orderData.customer_name,\n    order_total:    orderData.order_total,\n    currency:       orderData.currency,\n    line_items:     orderData.line_items || [],\n    actioned_at:    new Date().toISOString()\n  }\n}];"
+      },
+      "id": "766f505d-fc14-4091-8525-1adfcbf5acea",
+      "name": "Parse Problem Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        2320
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "restock",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "restock",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "restock"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "contact",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "contact",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "contact"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "9441392a-a403-41f4-b976-810ae8e8da0d",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -832,
+        2304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Restock: add quantities back to inventory sheet\nconst order = $input.first().json;\nconst lineItems = order.line_items || [];\n\nif (lineItems.length === 0) {\n  throw new Error(`Order #${order.order_number} has no line items to restock`);\n}\n\n// Return one item per line — the Inventory Update Sheet node below\n// uses a loop to update each SKU's stock level\nreturn lineItems.map(item => ({\n  json: {\n    sku:          item.sku,\n    product_name: item.product_name,\n    qty_to_return: item.quantity,\n    order_id:     order.order_id,\n    order_number: order.order_number\n  }\n}));"
+      },
+      "id": "54dd794c-c087-4d93-9bd6-e36880d203bc",
+      "name": "Prepare Restock Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        2240
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Inventory Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "f26245ef-c65f-46b7-926f-210d56958302",
+      "name": "Read Inventory for Restock",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -368,
+        2240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Prepare Restock Items').item.json;\nconst inventoryRows = $('Read Inventory for Restock').all();\n\nconst match = inventoryRows.find(r =>\n  (r.json.SKU || '').toString().trim().toLowerCase() === item.sku.toLowerCase()\n);\n\nif (!match) {\n  throw new Error(`Cannot restock: SKU \"${item.sku}\" not found in inventory sheet`);\n}\n\nconst currentStock = parseInt(match.json['Current Stock']) || 0;\nconst newStock = currentStock + item.qty_to_return;\n\nreturn [{\n  json: {\n    sku:         item.sku,\n    product_name: item.product_name,\n    old_stock:   currentStock,\n    new_stock:   newStock,\n    qty_returned: item.qty_to_return,\n    order_number: item.order_number,\n    updated_at:  new Date().toISOString()\n  }\n}];"
+      },
+      "id": "cbfd0e33-e353-4e89-bde7-00f49433003c",
+      "name": "Calculate Restocked Qty",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        2240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Inventory Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PkwdxIA7LiNAxZg9jwdrbN110zXE9g_6jGui1oAa-dM/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Current Stock": "={{ $json.new_stock }}",
+            "Last Updated": "={{ $json.updated_at }}",
+            "row_number": 0,
+            "SKU": "={{ $json.sku }}"
+          },
+          "matchingColumns": [
+            "SKU"
+          ],
+          "schema": [
+            {
+              "id": "SKU",
+              "displayName": "SKU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Product Name",
+              "displayName": "Product Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Current Stock",
+              "displayName": "Current Stock",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reorder Threshold",
+              "displayName": "Reorder Threshold",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Reorder Qty",
+              "displayName": "Reorder Qty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Supplier Name",
+              "displayName": "Supplier Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Supplier Email",
+              "displayName": "Supplier Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Auto Ordering Allowed",
+              "displayName": "Auto Ordering Allowed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "40bc50ba-9843-4b67-8e38-f25075643269",
+      "name": "Update Inventory Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        112,
+        2240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.customer_email }}",
+        "subject": "=We are following up on your order #{{ $json.order_number }}",
+        "message": "=<p>Hi {{ $json.customer_name || 'there' }},</p><p>We noticed there was an issue processing payment for your order #{{ $json.order_number }}.</p><p>Please update your payment details or contact us and we will be happy to assist.</p><p>Your cart is saved and ready when you are.</p><p>Sorry for the inconvenience.</p>",
+        "options": {}
+      },
+      "id": "28e4cc78-956e-41a7-9f16-85882005ee46",
+      "name": "Email Customer — Contact",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        2448
+      ],
+      "webhookId": "d5d9f842-3059-47f1-98a1-be8260c54d57",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "html",
+        "options": {}
+      },
+      "id": "244d7849-4bef-4004-87a1-463a1699ce03",
+      "name": "Respond — Action Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        352,
+        2416
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Problem order handler",
+        "height": 1056,
+        "width": 2240
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        1632
+      ],
+      "id": "ce7088e1-f11c-4d14-b797-bd861ae0c783",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "6eb51d40-2de8-49a3-8478-84dde1d21a9c",
+      "name": "Daily 8AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -912,
+        3008
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders Master",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "cc38e52d-8ea5-4f20-94e2-eaa6ef429e5f",
+      "name": "Read Orders Master",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -704,
+        3008
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 600887742,
+          "mode": "list",
+          "cachedResultName": "Problem Orders",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=600887742"
+        },
+        "options": {}
+      },
+      "id": "36de4c68-90c7-4993-ab47-00fdf38b8b3c",
+      "name": "Read Problem Orders",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -704,
+        3168
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Daily audit: SLA check, revenue summary, stuck orders ──\n// ── Configuration ──\nconst SLA_PROCESSING_HOURS = 48;  // orders stuck in 'processing' longer than this = overdue\nconst SLA_ON_HOLD_HOURS    = 24;  // orders on hold longer than this = needs attention\nconst HIGH_VALUE_THRESHOLD = 500; // flag high-value open orders in digest\n\nconst allOrders    = $('Read Orders Master').all();\nconst problemOrders = $('Read Problem Orders').all();\nconst now = Date.now();\nconst today = new Date();\nconst yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);\n\n// ─ Yesterday's completed orders for revenue summary ─\nconst yesterdayOrders = allOrders.filter(r => {\n  const created = new Date(r.json['Date Created'] || 0);\n  return created >= yesterday && created < today;\n});\n\nconst yesterdayCompleted = yesterdayOrders.filter(r =>\n  ['completed','processing'].includes((r.json.Status || '').toLowerCase())\n);\n\nconst totalRevenue = yesterdayCompleted.reduce((sum, r) =>\n  sum + (parseFloat(r.json['Order Total']) || 0), 0\n);\nconst avgOrderValue = yesterdayCompleted.length > 0\n  ? (totalRevenue / yesterdayCompleted.length).toFixed(2)\n  : 0;\n\n// ─ SLA breach: orders stuck in processing > 48h ─\nconst stuckProcessing = allOrders.filter(r => {\n  const status = (r.json.Status || '').toLowerCase();\n  if (status !== 'processing') return false;\n  const logged = new Date(r.json['Logged At'] || r.json['Date Created'] || 0).getTime();\n  const ageHours = (now - logged) / 3600000;\n  return ageHours > SLA_PROCESSING_HOURS;\n}).map(r => ({\n  order_number: r.json['Order Number'] || r.json['Order ID'],\n  customer:     r.json['Customer Name'],\n  total:        r.json['Order Total'],\n  logged_at:    r.json['Logged At']\n}));\n\n// ─ On hold > 24h ─\nconst stuckOnHold = allOrders.filter(r => {\n  const status = (r.json.Status || '').toLowerCase();\n  if (status !== 'on-hold') return false;\n  const logged = new Date(r.json['Logged At'] || r.json['Date Created'] || 0).getTime();\n  const ageHours = (now - logged) / 3600000;\n  return ageHours > SLA_ON_HOLD_HOURS;\n}).map(r => ({\n  order_number: r.json['Order Number'] || r.json['Order ID'],\n  customer:     r.json['Customer Name'],\n  total:        r.json['Order Total']\n}));\n\n// ─ Open problem orders unresolved ─\nconst openProblems = problemOrders.filter(r =>\n  (r.json.Status || '').toLowerCase() === 'open'\n).map(r => ({\n  order_number: r.json['Order Number'],\n  problem_type: r.json['Problem Type'],\n  severity:     r.json['Severity'],\n  customer:     r.json['Customer Email'],\n  logged_at:    r.json['Logged At']\n}));\n\n// ─ Flagged orders still unresolved ─\nconst openFlagged = allOrders.filter(r =>\n  r.json.Flagged === 'YES' &&\n  ['processing','on-hold'].includes((r.json.Status || '').toLowerCase())\n).length;\n\n// ─ Build Slack digest ─\nconst lines = [\n  `:bar_chart: *Daily Order Digest — ${today.toDateString()}*`,\n  '',\n  `*Yesterday:* ${yesterdayCompleted.length} orders | Revenue: ${yesterdayCompleted[0]?.json?.Currency || 'USD'} ${totalRevenue.toFixed(2)} | Avg: ${yesterdayCompleted[0]?.json?.Currency || 'USD'} ${avgOrderValue}`,\n  ''\n];\n\nif (stuckProcessing.length > 0) {\n  lines.push(`:warning: *SLA Breach — ${stuckProcessing.length} order(s) stuck in processing >48h:*`);\n  stuckProcessing.forEach(o => lines.push(`  • Order #${o.order_number} — ${o.customer} (${o.total})`));\n  lines.push('');\n}\n\nif (stuckOnHold.length > 0) {\n  lines.push(`:large_yellow_circle: *On Hold >24h — ${stuckOnHold.length} order(s) need attention:*`);\n  stuckOnHold.forEach(o => lines.push(`  • Order #${o.order_number} — ${o.customer} (${o.total})`));\n  lines.push('');\n}\n\nif (openProblems.length > 0) {\n  lines.push(`:red_circle: *Unresolved Problems — ${openProblems.length} open issue(s):*`);\n  openProblems.forEach(o => lines.push(`  • Order #${o.order_number} — ${o.problem_type} (${o.severity}) — ${o.customer}`));\n  lines.push('');\n}\n\nif (openFlagged > 0) {\n  lines.push(`:rotating_light: ${openFlagged} flagged order(s) still awaiting review in #order-review`);\n  lines.push('');\n}\n\nif (stuckProcessing.length === 0 && stuckOnHold.length === 0 && openProblems.length === 0) {\n  lines.push(':white_check_mark: No SLA breaches or unresolved issues. All clear.');\n}\n\nreturn [{\n  json: {\n    date:                today.toISOString().slice(0, 10),\n    orders_yesterday:    yesterdayCompleted.length,\n    revenue_yesterday:   totalRevenue.toFixed(2),\n    avg_order_value:     avgOrderValue,\n    stuck_processing:    stuckProcessing.length,\n    stuck_on_hold:       stuckOnHold.length,\n    open_problems:       openProblems.length,\n    open_flagged:        openFlagged,\n    slack_digest:        lines.join('\\n'),\n    has_alerts:          stuckProcessing.length > 0 || stuckOnHold.length > 0 || openProblems.length > 0\n  }\n}];"
+      },
+      "id": "b021506a-6e82-4028-928b-4f00d8ea677a",
+      "name": "Build Daily Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        3088
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 142609406,
+          "mode": "list",
+          "cachedResultName": "Daily Summary",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=142609406"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.date }}",
+            "Orders": "={{ $json.orders_yesterday }}",
+            "Revenue": "={{ $json.revenue_yesterday }}",
+            "Avg Order Value": "={{ $json.avg_order_value }}",
+            "SLA Breaches": "={{ $json.stuck_processing }}",
+            "On Hold Overdue": "={{ $json.stuck_on_hold }}",
+            "Open Problems": "={{ $json.open_problems }}",
+            "Flagged Unresolved": "={{ $json.open_flagged }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Orders",
+              "displayName": "Orders",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Revenue",
+              "displayName": "Revenue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Avg Order Value",
+              "displayName": "Avg Order Value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "SLA Breaches",
+              "displayName": "SLA Breaches",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "On Hold Overdue",
+              "displayName": "On Hold Overdue",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Open Problems",
+              "displayName": "Open Problems",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Flagged Unresolved",
+              "displayName": "Flagged Unresolved",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "82940438-b650-4560-a201-a322b644ad32",
+      "name": "Log Daily Summary",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -256,
+        3168
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-alerts",
+              "leftValue": "={{ $json.has_alerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b3d94de-882d-4323-89ba-f509c826cdb2",
+      "name": "Has Urgent Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        3344
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "ksanu848@gmail.com",
+        "subject": "=[Action Required] Daily Order Audit — {{ $json.stuck_processing + $json.stuck_on_hold + $json.open_problems }} issue(s) need attention",
+        "message": "=<h2>Daily Order Audit — {{ $json.date }}</h2><p>The following issues need your attention today:</p><ul>{{ $json.stuck_processing > 0 ? '<li>' + $json.stuck_processing + ' order(s) stuck in processing over 48 hours</li>' : '' }}{{ $json.stuck_on_hold > 0 ? '<li>' + $json.stuck_on_hold + ' order(s) on hold over 24 hours</li>' : '' }}{{ $json.open_problems > 0 ? '<li>' + $json.open_problems + ' unresolved problem order(s)</li>' : '' }}{{ $json.open_flagged > 0 ? '<li>' + $json.open_flagged + ' flagged order(s) awaiting review</li>' : '' }}</ul><p>Revenue yesterday: {{ $json.revenue_yesterday }} ({{ $json.orders_yesterday }} orders)</p>",
+        "options": {}
+      },
+      "id": "bf4b6d82-7114-4880-ac71-aa5fe9cb764f",
+      "name": "Email — Urgent Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        32,
+        3216
+      ],
+      "webhookId": "637209f7-99f7-4bfd-8b8d-eb5ae0173675",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Daily operations audit",
+        "height": 912,
+        "width": 2240
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        2736
+      ],
+      "id": "5e973a39-22db-4c2d-b8ea-c0ff5abf81dc",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "={{ $json.slack_msg }}",
+        "otherOptions": {
+          "unfurl_links": false,
+          "unfurl_media": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        -544,
+        1872
+      ],
+      "id": "0b1fedd6-6b4e-4024-8026-204c0a549b7e",
+      "name": "Slack #order-problems Alert",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "=:package: *Restocked* — {{ $json.product_name }} (SKU: {{ $json.sku }}) +{{ $json.qty_returned }} units returned to stock (now {{ $json.new_stock }}) from cancelled Order #{{ $json.order_number }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        352,
+        2208
+      ],
+      "id": "9a655405-1a77-4772-8e8a-5f3d754cd798",
+      "name": "Slack — Restock Confirmed1",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "={{ $json.slack_digest }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        -96,
+        2976
+      ],
+      "id": "03ad259f-90c5-436e-b902-41a3cf54d70d",
+      "name": "Slack #ops-daily Digest",
+      "webhookId": "8eb8a564-5af0-4e98-957e-a18a46be947b",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "update",
+        "orderId": "={{ $json.order_id }}",
+        "updateFields": {
+          "customerNote": "Order reviewed and approved by team.",
+          "status": "pending"
+        },
+        "billingUi": {},
+        "couponLinesUi": {},
+        "feeLinesUi": {},
+        "lineItemsUi": {},
+        "metadataUi": {},
+        "shippingUi": {},
+        "shippingLinesUi": {}
+      },
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        416
+      ],
+      "id": "a76b6083-b3e3-4c77-8ae1-7562043a1f75",
+      "name": "WooCommerce — Keep Processing",
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "qpVE8B0a04QnMPQV",
+          "name": "SAH Kitchen Woo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "update",
+        "orderId": "={{ $json.order_id }}",
+        "updateFields": {
+          "customerNote": "=Order {{ $json.action === 'hold' ? 'put on hold' : 'cancelled' }} by team after review.",
+          "status": "={{ $json.action === 'hold' ? 'on-hold' : 'cancelled' }}"
+        },
+        "billingUi": {},
+        "couponLinesUi": {},
+        "feeLinesUi": {},
+        "lineItemsUi": {},
+        "metadataUi": {},
+        "shippingUi": {},
+        "shippingLinesUi": {}
+      },
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        608
+      ],
+      "id": "867a935c-f4ef-4241-8bd6-a71b2b70ba87",
+      "name": "WooCommerce — Hold or Cancel",
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "qpVE8B0a04QnMPQV",
+          "name": "SAH Kitchen Woo"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WooCommerce Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Parse Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Parse Order": {
+      "main": [
+        [
+          {
+            "node": "Is Processing Order?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Processing Order?": {
+      "main": [
+        [
+          {
+            "node": "Read Recent Orders",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip — Not Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Recent Orders": {
+      "main": [
+        [
+          {
+            "node": "Read Inventory Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Inventory Sheet": {
+      "main": [
+        [
+          {
+            "node": "Fraud Check & Stock Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fraud Check & Stock Validate": {
+      "main": [
+        [
+          {
+            "node": "Log Order to Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Flagged?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack #orders — New Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Flagged?": {
+      "main": [
+        [
+          {
+            "node": "Slack #order-review — Flag Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Order Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Review Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Review Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Review Action": {
+      "main": [
+        [
+          {
+            "node": "Action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action?": {
+      "main": [
+        [
+          {
+            "node": "WooCommerce — Keep Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WooCommerce — Hold or Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Order to Sheet": {
+      "main": [
+        []
+      ]
+    },
+    "WooCommerce Order Updated Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Status Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Status Change": {
+      "main": [
+        [
+          {
+            "node": "Update Orders Master",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append Status Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Should Email Customer?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack #orders — Status Update1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Email Customer?": {
+      "main": [
+        [
+          {
+            "node": "Email Customer — Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Customer Email Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problem Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classify Problem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Problem": {
+      "main": [
+        [
+          {
+            "node": "Is a Problem Status?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is a Problem Status?": {
+      "main": [
+        [
+          {
+            "node": "Log Problem Order",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is High Severity?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack #order-problems Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is High Severity?": {
+      "main": [
+        [
+          {
+            "node": "Urgent Email — High Severity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problem Action Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Problem Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Problem Action": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Prepare Restock Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Customer — Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Action Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Restock Items": {
+      "main": [
+        [
+          {
+            "node": "Read Inventory for Restock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Inventory for Restock": {
+      "main": [
+        [
+          {
+            "node": "Calculate Restocked Qty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Restocked Qty": {
+      "main": [
+        [
+          {
+            "node": "Update Inventory Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Inventory Sheet": {
+      "main": [
+        [
+          {
+            "node": "Respond — Action Complete",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack — Restock Confirmed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Customer — Contact": {
+      "main": [
+        [
+          {
+            "node": "Respond — Action Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 8AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Orders Master",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Problem Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Orders Master": {
+      "main": [
+        [
+          {
+            "node": "Build Daily Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Problem Orders": {
+      "main": [
+        [
+          {
+            "node": "Build Daily Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Daily Audit": {
+      "main": [
+        [
+          {
+            "node": "Log Daily Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Urgent Alerts?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack #ops-daily Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Urgent Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Email — Urgent Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WooCommerce — Keep Processing": {
+      "main": [
+        [
+          {
+            "node": "Respond to Review Click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WooCommerce — Hold or Cancel": {
+      "main": [
+        [
+          {
+            "node": "Respond to Review Click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "LKJ6qh2aB9z7GV4RaFiSa",
+    "executionTimeout": -1
+  },
+  "versionId": "0cee244e-4f16-4d51-888e-5da4eb611046",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "37ee74431af36e5f6e2177b0b6e0ba77f82f98e5f13559f1dbfcc6190c6b5601"
+  },
+  "id": "KSEi3YODlMMMqosMtvj1D",
+  "tags": [
+    {
+      "updatedAt": "2026-04-03T08:36:50.964Z",
+      "createdAt": "2026-04-03T08:36:50.964Z",
+      "id": "KdEwYDCxBlPC0YKC",
+      "name": "Woocommerce Order Manage"
+    }
+  ]
+}

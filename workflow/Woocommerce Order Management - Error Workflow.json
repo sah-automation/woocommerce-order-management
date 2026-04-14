@@ -1,0 +1,249 @@
+{
+  "name": "Woocommerce Order Management - Error Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "dd1c482a-5268-4669-89e2-8ca68a68efa9",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first().json;\n\nconst workflowName = err.workflow?.name || 'Unknown Workflow';\nconst nodeName     = err.execution?.lastNodeExecuted || 'Unknown Node';\nconst errorMsg     = err.execution?.error?.message || 'No message';\nconst errorStack   = err.execution?.error?.stack   || '';\nconst execId       = err.execution?.id  || 'N/A';\nconst execUrl      = err.execution?.url || '';\nconst timestamp    = new Date().toISOString();\n\n// ─ Severity classification for order management ─\n// CRITICAL = data integrity risk or customer-facing failure\n// WARNING  = operational issue but recoverable\nconst CRITICAL_NODES = [\n  'Log Order to Sheet',\n  'Update Orders Master',\n  'Append Status Log',\n  'Log Problem Order',\n  'Update Inventory Sheet',\n  'WooCommerce — Keep Processing',\n  'WooCommerce — Hold or Cancel',\n  'Email Customer — Status Update'\n];\nconst CRITICAL_WORKFLOWS = [\n  'Order Flow 1',\n  'Order Flow 3'\n];\n\nconst isCritical = CRITICAL_NODES.includes(nodeName) ||\n  CRITICAL_WORKFLOWS.some(w => workflowName.includes(w));\n\nconst severity = isCritical ? 'CRITICAL' : 'WARNING';\nconst severityEmoji = isCritical ? ':red_circle:' : ':warning:';\n\nconst criticalNote = isCritical\n  ? '\\n*Note:* This may have left an order in an inconsistent state. Check the Orders Master sheet and WooCommerce admin manually.'\n  : '';\n\nconst subject = `${isCritical ? '[CRITICAL]' : '[WARNING]'} n8n Order Error — ${workflowName} — ${nodeName}`;\n\nconst html = `\n<h2 style='color:${isCritical ? '#c0392b' : '#e67e22'}'>\n  ${isCritical ? 'CRITICAL' : 'WARNING'} — Order Workflow Error\n</h2>\n<table border='1' cellpadding='8' style='border-collapse:collapse;width:100%'>\n  <tr><td><b>Workflow</b></td><td>${workflowName}</td></tr>\n  <tr><td><b>Failed Node</b></td><td>${nodeName}</td></tr>\n  <tr><td><b>Error</b></td><td style='color:#c0392b'>${errorMsg}</td></tr>\n  <tr><td><b>Severity</b></td><td>${severity}</td></tr>\n  <tr><td><b>Execution ID</b></td><td>${execId}</td></tr>\n  <tr><td><b>Time</b></td><td>${timestamp}</td></tr>\n  ${execUrl ? `<tr><td><b>View Execution</b></td><td><a href='${execUrl}'>${execUrl}</a></td></tr>` : ''}\n</table>\n${isCritical ? '<p style=\"color:#c0392b\"><b>This may have left an order in an inconsistent state. Manually check Orders Master sheet and WooCommerce admin.</b></p>' : ''}\n${errorStack ? `<details><summary style='margin-top:12px;cursor:pointer'>Stack trace</summary><pre style='background:#f5f5f5;padding:12px;font-size:12px'>${errorStack}</pre></details>` : ''}\n`;\n\nconst slackText = [\n  `${severityEmoji} *[${severity}] Order Workflow Error*`,\n  `*Workflow:* ${workflowName}`,\n  `*Node:* ${nodeName}`,\n  `*Error:* ${errorMsg}`,\n  `*Time:* ${timestamp}`,\n  execUrl ? `*Execution:* ${execUrl}` : '',\n  criticalNote\n].filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    subject, html, slack_text: slackText,\n    severity, workflow_name: workflowName,\n    node_name: nodeName, error_message: errorMsg,\n    exec_id: execId, timestamp, is_critical: isCritical\n  }\n}];"
+      },
+      "id": "26df3351-9618-4bb1-9e3f-e993b112b24e",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w",
+          "mode": "list",
+          "cachedResultName": "Woocommerce Order Management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 741560453,
+          "mode": "list",
+          "cachedResultName": "Error Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13wsA1AUVfwrScykEaMTbUgYk-cyO2kuS79etfw3bp8w/edit#gid=741560453"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Severity": "={{ $json.severity }}",
+            "Workflow": "={{ $json.workflow_name }}",
+            "Failed Node": "={{ $json.node_name }}",
+            "Error Message": "={{ $json.error_message }}",
+            "Execution ID": "={{ $json.exec_id }}",
+            "Status": "unresolved"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Severity",
+              "displayName": "Severity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Workflow",
+              "displayName": "Workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Failed Node",
+              "displayName": "Failed Node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Error Message",
+              "displayName": "Error Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Execution ID",
+              "displayName": "Execution ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "2c2381a1-3b39-4dea-a6f5-140aeda3f3ac",
+      "name": "Log Error to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        0,
+        -64
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "VVym3egTu9EE5ra8",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ksanu848@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "6f6585bb-2351-4de8-87e7-27f3b5870bda",
+      "name": "Send Error Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        0,
+        128
+      ],
+      "webhookId": "bfc10599-1650-4117-a49e-2ff35adb0768",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "OHQgwHhQBUqCSTOs",
+          "name": "tanisitech@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ARJH681PA",
+          "mode": "list",
+          "cachedResultName": "woocommerce-order-management"
+        },
+        "text": "={{ $json.slack_text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        336
+      ],
+      "id": "9b29b1ff-a36c-47b1-9924-f51cbbaecdc0",
+      "name": "Slack Error Alert",
+      "webhookId": "1de63093-565d-4441-88f8-a877bc15ace7",
+      "credentials": {
+        "slackApi": {
+          "id": "4qvC7OnRRv7VPzVg",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Error Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "7b75f51e-c339-4216-9568-fdad02b43a20",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "37ee74431af36e5f6e2177b0b6e0ba77f82f98e5f13559f1dbfcc6190c6b5601"
+  },
+  "id": "LKJ6qh2aB9z7GV4RaFiSa",
+  "tags": [
+    {
+      "updatedAt": "2026-04-03T08:36:50.964Z",
+      "createdAt": "2026-04-03T08:36:50.964Z",
+      "id": "KdEwYDCxBlPC0YKC",
+      "name": "Woocommerce Order Manage"
+    }
+  ]
+}
